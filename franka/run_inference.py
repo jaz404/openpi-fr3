@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 
-# inspired from https://github.com/hca-lab-UofAlberta/pi0-franka-robot/blob/main/inference_pi.py
+'''
+inspired from https://github.com/hca-lab-UofAlberta/pi0-franka-robot/blob/main/inference_pi.py
 
+2 Camera fr3 setup for pi0 inference 
+- realsense  - wrist camera 
+- logitech c940 - left camera
+
+'''
 import socket
 import struct
 import time
@@ -14,7 +20,11 @@ from PIL import Image
 from openpi.training import config
 from openpi.policies import policy_config
 
-CHECKPOINT_PATH = "gs://openpi-assets/checkpoints/pi0_fast_droid"
+# Change this if /dev/video0 is not the camera 
+CAMERA_LEFT = "/dev/video0"    # logitech c940             
+
+# CHECKPOINT_PATH = "gs://openpi-assets/checkpoints/pi0_fast_droid"
+CHECKPOINT_PATH = "gs://openpi-assets/checkpoints/pi05_droid"
 
 # UDP CONFIG
 
@@ -33,6 +43,7 @@ state_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 state_sock.bind(("0.0.0.0", STATE_PORT))
 state_sock.setblocking(False)
 
+# may be unsafe to do
 last_robot_state = np.zeros(14, dtype=np.float64)
 
 
@@ -102,12 +113,13 @@ def get_realsense_rgb(pipeline):
     return rgb
 
 # LEFT CAMERA (logitech C920)
-def start_left_camera(device_index=0):
-    cap = cv2.VideoCapture(device_index)
+def start_left_camera(device_path=CAMERA_LEFT):
+    cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
 
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open left camera at index {device_index}")
+        raise RuntimeError(f"Could not open left camera at {device_path}")
 
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
@@ -124,29 +136,25 @@ def get_left_camera_rgb(cap):
 
     return rgb
 
-
-# MAIN
-
 def main():
     # Camera setup
 
     # Set this if multiple RealSense devices are connected.
     WRIST_REALSENSE_SERIAL = None
 
-    # Change this if /dev/video0 is not your left camera.
-    LEFT_CAMERA_INDEX = 0
-
     wrist_pipe = start_realsense_wrist(WRIST_REALSENSE_SERIAL)
-    left_cap = start_left_camera(LEFT_CAMERA_INDEX)
+    left_cap = start_left_camera()
 
     print("[camera] Started RealSense wrist camera")
-    print(f"[camera] Started left camera on index {LEFT_CAMERA_INDEX}")
+    print(f"[camera] Started left camera on {CAMERA_LEFT}")
 
     # ----------------------------
     # Policy setup
     # ----------------------------
 
-    cfg = config.get_config("pi0_fast_droid")
+    # cfg = config.get_config("pi0_fast_droid")
+    cfg = config.get_config("pi05_droid")
+
     policy = policy_config.create_trained_policy(cfg, CHECKPOINT_PATH)
 
     print("[policy] Loaded OpenPI policy")
@@ -156,7 +164,7 @@ def main():
     send_interval = 0.2  # 5 Hz
     last_send_time = 0.0
 
-    prompt = "pick up the banana and place it on the white plate"
+    prompt = "pick up the cube"
 
     try:
         while True:
